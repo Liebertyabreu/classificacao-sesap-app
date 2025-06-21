@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classificação SESAP - Com Banco de Dados</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chosen Palette: Existing palette remains -->
+    <!-- Application Structure Plan: The existing tabbed interface remains for regional classification. The core change is the underlying data persistence moving from client-side localStorage to a server-side NoSQL database (Firestore) managed by Firebase. This enhances data integrity, scalability, and security. The administration panel is updated to reflect this backend change, allowing database operations (backup/restore/clear) against the cloud database. User ID is displayed for context. -->
+    <!-- Visualization & Content Choices: The core functionality of candidate classification and display (forms, lists, counters) remains. The administrative tools are re-engineered to interface with Firestore. Notification system and custom confirmation modal are retained/added for user feedback and interaction. No new complex visualizations are introduced as the primary focus is on robust backend data management. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8F7F4; color: #333333; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .tab-button.active { background-color: #3B82F6; color: white; }
+        .admin-panel { display: none; }
+        .admin-panel.active { display: block; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .modal-content-custom { background-color: white; padding: 2rem; border-radius: 0.5rem; max-width: 400px; width: 90%; text-align: center; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+        <div class="bg-white rounded-lg shadow-lg">
+            <!-- Header -->
+            <div class="bg-blue-600 text-white p-6 rounded-t-lg">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-3xl font-bold flex items-center">
+                            <i class="fas fa-hospital mr-3"></i>
+                            Classificação SESAP
+                        </h1>
+                        <p class="text-blue-100 mt-2">Sistema de Classificação por Regiões com Banco de Dados</p>
+                        <p id="userStatus" class="text-blue-100 mt-1 text-sm"></p> <!-- User ID display -->
+                    </div>
+                    <button id="adminToggle" class="bg-blue-800 hover:bg-blue-900 px-4 py-2 rounded-lg transition">
+                        <i class="fas fa-cog mr-2"></i>Administração
+                    </button>
+                </div>
+            </div>
+
+            <!-- Admin Panel -->
+            <div id="adminPanel" class="admin-panel bg-gray-50 p-6 border-b">
+                <h3 class="text-lg font-semibold mb-4 text-gray-800">
+                    <i class="fas fa-database mr-2"></i>Gerenciamento de Banco de Dados
+                </h3>
+                <div class="grid md:grid-cols-4 gap-4">
+                    <button id="backupBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition">
+                        <i class="fas fa-download mr-2"></i>Backup JSON
+                    </button>
+                    <button id="restoreBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition">
+                        <i class="fas fa-upload mr-2"></i>Restaurar
+                    </button>
+                    <button id="exportCsvBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition">
+                        <i class="fas fa-file-csv mr-2"></i>Exportar CSV
+                    </button>
+                    <button id="clearAllBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition">
+                        <i class="fas fa-trash mr-2"></i>Limpar Tudo
+                    </button>
+                </div>
+                <input type="file" id="restoreFile" accept=".json" class="hidden">
+                
+                <!-- Database Status -->
+                <div class="mt-4 p-4 bg-white rounded-lg border">
+                    <h4 class="font-semibold text-gray-700 mb-2">Status do Banco de Dados:</h4>
+                    <div id="dbStatus" class="text-sm text-gray-600"></div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex flex-wrap border-b bg-gray-50">
+                <button class="tab-button active px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="1">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 1
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="2">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 2
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="3">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 3
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="4">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 4
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="5">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 5
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="6">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 6
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="7">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 7
+                </button>
+                <button class="tab-button px-6 py-3 font-medium text-gray-700 hover:bg-gray-200 transition" data-region="8">
+                    <i class="fas fa-map-marker-alt mr-2"></i>Região 8
+                </button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="p-6">
+                <!-- Região 1-8 (Template) -->
+                <div class="tab-content active" data-region="1">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <!-- Form Column -->
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 1
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="1">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Lists Column -->
+                        <div class="space-y-6">
+                            <!-- Ampla Concorrência -->
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 1
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-1">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="1" data-tipo="ampla"></div>
+                            </div>
+
+                            <!-- PCD -->
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 1
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-1">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="1" data-tipo="pcd"></div>
+                            </div>
+
+                            <!-- PPP -->
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 1
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-1">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="1" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Repeat for regions 2-8 -->
+                <div class="tab-content" data-region="2">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 2
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="2">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 2
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-2">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="2" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 2
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-2">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="2" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 2
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-2">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="2" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Continue for regions 3-8 -->
+                <div class="tab-content" data-region="3">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 3
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 3
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-3">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="3" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 3
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-3">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="3" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 3
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-3">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="3" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" data-region="4">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 4
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 4
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-4">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="4" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 4
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-4">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="4" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 4
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-4">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="4" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" data-region="5">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 5
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="5">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 5
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-5">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="5" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 5
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-5">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="5" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 5
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-5">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="5" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" data-region="6">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 6
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 6
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-6">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="6" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 6
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-6">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="6" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 6
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-6">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="6" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" data-region="7">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 7
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="7">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 7
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-7">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="7" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 7
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-7">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="7" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 7
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-7">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="7" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" data-region="8">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-6 rounded-lg border">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>Cadastro de Candidato - Região 8
+                            </h3>
+                            <form class="candidate-form space-y-4" data-region="8">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user mr-2"></i>Nome do Candidato
+                                    </label>
+                                    <input type="text" name="nome" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-star mr-2"></i>Pontuação
+                                    </label>
+                                    <input type="number" name="pontuacao" required step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-list mr-2"></i>Tipo de Vaga
+                                    </label>
+                                    <select name="tipo" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione o tipo</option>
+                                        <option value="ampla">🏆 Ampla Concorrência</option>
+                                        <option value="pcd">♿ PCD (Pessoa com Deficiência)</option>
+                                        <option value="ppp">🎯 PPP (Pessoa Preto ou Pardo)</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium transition">
+                                    <i class="fas fa-check mr-2"></i>Finalizar Cadastro
+                                </button>
+                            </form>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-yellow-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🏆 Ampla Concorrência - Região 8
+                                        <span class="ml-auto bg-yellow-600 px-2 py-1 rounded text-sm" data-count="ampla-8">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="8" data-tipo="ampla"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-green-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        ♿ PCD - Região 8
+                                        <span class="ml-auto bg-green-600 px-2 py-1 rounded text-sm" data-count="pcd-8">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="8" data-tipo="pcd"></div>
+                            </div>
+                            <div class="bg-white border rounded-lg">
+                                <div class="bg-purple-500 text-white p-4 rounded-t-lg">
+                                    <h4 class="font-semibold flex items-center">
+                                        🎯 PPP - Região 8
+                                        <span class="ml-auto bg-purple-600 px-2 py-1 rounded text-sm" data-count="ppp-8">0</span>
+                                    </h4>
+                                </div>
+                                <div class="lista-candidatos max-h-64 overflow-y-auto" data-region="8" data-tipo="ppp"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal HTML -->
+    <div id="confirmationModal" class="modal-overlay hidden">
+        <div class="modal-content-custom">
+            <p id="confirmationMessage" class="text-lg font-semibold mb-4"></p>
+            <div class="flex justify-around space-x-4">
+                <button id="confirmYes" class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg flex-1">Sim</button>
+                <button id="confirmNo" class="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-lg flex-1">Não</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Firebase modules necessary for the application
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, onSnapshot, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables for Firebase instances (app, authentication, database) and the user's ID
+        let app;
+        let auth;
+        let db;
+        let userId; // Stores the authenticated user ID, crucial for user-specific data paths in Firestore
+
+        // Global array to hold all candidates data, populated and kept in sync by the Firestore listener
+        let allCandidates = [];
+
+        /**
+         * Initializes the Firebase application, sets up authentication, and connects to Firestore.
+         * It attempts to sign in the user using a custom token provided by the environment. If no token is available,
+         * it falls back to anonymous authentication. After successful authentication, it displays the user's ID
+         * and sets up a real-time listener for candidate data in Firestore.
+         */
+        async function initializeFirebase() {
+            try {
+                // Parse the Firebase configuration and retrieve the application ID from global variables
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                // Initialize the Firebase app, authentication service, and Firestore database
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Authenticate the user: prioritize custom token (for authenticated sessions)
+                // or use anonymous sign-in if no custom token is provided (for general access)
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Determine the user ID: use the authenticated UID or a randomly generated UUID for anonymous users
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                console.log("Firebase inicializado. ID do Usuário:", userId);
+
+                // Display the determined user ID in the application's header for user reference
+                document.getElementById('userStatus').textContent = `ID do Usuário: ${userId}`;
+
+                // Establish a real-time listener to keep the local `allCandidates` array
+                // and the UI synchronized with the Firestore database
+                setupCandidatesListener(appId, userId);
+                // Perform an initial update of the database status display in the admin panel
+                updateDbStatusDisplay();
+
+            } catch (error) {
+                // Log and notify if Firebase initialization fails
+                console.error("Erro ao inicializar Firebase:", error);
+                showNotification(`Erro ao conectar ao banco de dados: ${error.message}`, 'error');
+                document.getElementById('dbStatus').innerHTML = '<div class="text-red-600">Erro ao conectar ao banco de dados.</div>';
+            }
+        }
+
+        /**
+         * Sets up a real-time `onSnapshot` listener for the candidates collection in Firestore.
+         * This listener ensures that `allCandidates` array is always up-to-date with the database.
+         * Any changes in Firestore will automatically trigger a UI reload for all regions.
+         * @param {string} appId - The application ID, used in the Firestore path.
+         * @param {string} userId - The current user's ID, used in the Firestore path to ensure data isolation.
+         */
+        function setupCandidatesListener(appId, userId) {
+            // Construct the Firestore collection reference path. Data is stored under:
+            // `artifacts/{appId}/users/{userId}/candidates` to ensure privacy per user.
+            const candidatesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/candidates`);
+            
+            // `onSnapshot` provides real-time updates. It triggers its callback function
+            // every time there's a change in the queried collection.
+            onSnapshot(candidatesCollectionRef, (snapshot) => {
+                allCandidates = []; // Clear the existing local array to rebuild it with fresh data
+                snapshot.forEach((doc) => {
+                    // For each document in the snapshot, add its data (including its Firestore ID)
+                    // to the `allCandidates` array.
+                    allCandidates.push({ id: doc.id, ...doc.data() });
+                });
+                console.log("Dados do Firestore atualizados:", allCandidates);
+                // After updating the local data, refresh all regions in the UI to reflect changes
+                loadAllRegionData();
+                // Update the database status display in the admin panel
+                updateDbStatusDisplay();
+            }, (error) => {
+                // Handle any errors that occur during the real-time listening process
+                console.error("Erro ao receber atualizações do Firestore:", error);
+                showNotification(`Erro ao carregar dados do banco de dados: ${error.message}`, 'error');
+            });
+        }
+
+        /**
+         * Adds a new candidate document to the Firestore database for the current user.
+         * Includes the candidate's region and an ISO-formatted timestamp of creation.
+         * @param {string} region - The region associated with the candidate.
+         * @param {object} candidate - An object containing `nome`, `pontuacao`, and `tipo` of the candidate.
+         */
+        async function addCandidateToFirestore(region, candidate) {
+            try {
+                // Get the collection reference for the current user's candidates
+                const candidatesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/candidates`);
+                // Add a new document. Firestore automatically assigns a unique ID.
+                await addDoc(candidatesCollectionRef, {
+                    ...candidate, // Spreads the properties of the candidate object
+                    region: region, // Explicitly store the region with the candidate document
+                    timestamp: new Date().toISOString() // Record the creation timestamp
+                });
+                showNotification('Candidato adicionado com sucesso!', 'success');
+            } catch (e) {
+                console.error("Erro ao adicionar documento: ", e);
+                showNotification(`Erro ao adicionar candidato: ${e.message}`, 'error');
+            }
+        }
+
+        /**
+         * Deletes all candidate documents belonging to the current user from their Firestore collection.
+         * This operation fetches all documents and then performs individual deletions.
+         */
+        async function deleteAllCandidatesFromFirestore() {
+            try {
+                // Get the collection reference for the current user's candidates
+                const candidatesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/candidates`);
+                // Query to get all documents in the collection
+                const q = query(candidatesCollectionRef);
+                const querySnapshot = await getDocs(q); // Execute the query to get all documents
+
+                const deletePromises = [];
+                // Iterate through each document found and queue up its deletion
+                querySnapshot.forEach((doc) => {
+                    deletePromises.push(deleteDoc(doc.ref)); // Add the promise to delete the document
+                });
+                // Wait for all deletion operations to complete concurrently
+                await Promise.all(deletePromises);
+                showNotification('Todos os dados foram apagados.', 'success');
+            } catch (e) {
+                console.error("Erro ao apagar documentos: ", e);
+                showNotification(`Erro ao apagar dados: ${e.message}`, 'error');
+            }
+        }
+
+        /**
+         * Restores candidate data to Firestore from a provided JSON string.
+         * This function first clears all existing candidate data for the current user,
+         * then adds each candidate from the JSON data as a new document in Firestore.
+         * Includes validation for the JSON data format.
+         * @param {string} jsonData - The JSON string containing an array of candidate objects.
+         * @returns {boolean} Returns `true` if the restoration process was successful, `false` otherwise.
+         */
+        async function restoreDataToFirestore(jsonData) {
+            try {
+                const dataToRestore = JSON.parse(jsonData); // Parse the JSON string into a JavaScript object
+                
+                // Validate that the parsed data is an array
+                if (!dataToRestore || !Array.isArray(dataToRestore)) {
+                    showNotification('Formato de arquivo inválido. Esperado um array de candidatos.', 'error');
+                    return false;
+                }
+
+                // Clear all existing data before restoring to prevent duplicates or inconsistencies
+                await deleteAllCandidatesFromFirestore();
+
+                // Get the collection reference for the current user's candidates
+                const candidatesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/candidates`);
+                const addPromises = []; // Array to hold promises for adding new documents
+                
+                // Iterate through each candidate object in the data to restore
+                for (const candidate of dataToRestore) {
+                    // Basic validation to ensure essential candidate properties exist
+                    if (candidate.nome && candidate.pontuacao !== undefined && candidate.tipo && candidate.region) {
+                        addPromises.push(addDoc(candidatesCollectionRef, {
+                            nome: candidate.nome,
+                            pontuacao: parseFloat(candidate.pontuacao), // Ensure pontuacao is stored as a number
+                            tipo: candidate.tipo,
+                            region: candidate.region,
+                            timestamp: candidate.timestamp || new Date().toISOString() // Use existing timestamp or a new one
+                        }));
+                    } else {
+                        console.warn("Candidato inválido no arquivo de restauração, pulando:", candidate);
+                    }
+                }
+                // Wait for all add operations to complete concurrently
+                await Promise.all(addPromises);
+                showNotification('Dados restaurados com sucesso!', 'success');
+                return true;
+            } catch (e) {
+                console.error("Erro ao restaurar dados: ", e);
+                showNotification(`Erro ao restaurar dados. Verifique o arquivo: ${e.message}`, 'error');
+                return false;
+            }
+        }
+
+        /**
+         * Exports all candidate data currently loaded in the `allCandidates` global array as a JSON string.
+         * This JSON string is formatted for readability.
+         * @returns {string} A JSON string representation of all candidates.
+         */
+        function exportJSONFromFirestore() {
+            // `JSON.stringify` with `null, 2` arguments formats the JSON with 2-space indentation for readability.
+            return JSON.stringify(allCandidates, null, 2);
+        }
+
+        /**
+         * Exports all candidate data currently loaded in the `allCandidates` global array as a CSV string.
+         * Includes a header row and properly formats candidate data, quoting names if they contain commas.
+         * @returns {string} A CSV formatted string of all candidates.
+         */
+        function exportCSVFromFirestore() {
+            // Define the CSV header row
+            let csv = 'Região,Nome,Pontuação,Tipo,Data/Hora\n';
+            // Iterate over each candidate in the global array
+            allCandidates.forEach(candidato => {
+                // Map the internal 'tipo' value to a more human-readable name for CSV export
+                const tipoName = candidato.tipo === 'ampla' ? 'Ampla Concorrência' :
+                               candidato.tipo === 'pcd' ? 'PCD' : 'PPP';
+                // Append a new row to the CSV string, ensuring `nome` is quoted to handle commas
+                csv += `${candidato.region},"${candidato.nome}",${candidato.pontuacao},${tipoName},${candidato.timestamp}\n`;
+            });
+            return csv;
+        }
+
+        /**
+         * Updates the database status display element in the admin panel.
+         * Shows the total number of candidates and a local timestamp of the last UI update.
+         */
+        function updateDbStatusDisplay() {
+            const statusDiv = document.getElementById('dbStatus');
+            // Ensure statusDiv exists and user is authenticated before attempting to update
+            if (statusDiv && auth.currentUser) {
+                const totalCandidatos = allCandidates.length;
+                // Display the total number of candidates and the local time of the last UI refresh (from Firestore)
+                statusDiv.innerHTML = `
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div><strong>Total de candidatos:</strong> ${totalCandidatos}</div>
+                        <div><strong>Última atualização (local):</strong> ${new Date().toLocaleString('pt-BR')}</div>
+                    </div>
+                `;
+            } else {
+                // Show a message indicating pending connection if Firebase is not yet initialized or authenticated
+                statusDiv.innerHTML = '<div class="text-gray-600">Aguardando conexão com o banco de dados.</div>';
+            }
+        }
+
+        /**
+         * Displays a custom confirmation modal to the user, replacing the browser's native `confirm()` dialog.
+         * This provides a more controlled and stylable user experience.
+         * @param {string} message - The message text to be displayed within the confirmation modal.
+         * @param {Function} callback - A function that will be called with `true` if the user clicks "Sim" (Yes)
+         * or `false` if the user clicks "Não" (No).
+         */
+        function showConfirmationModal(message, callback) {
+            const confirmationModal = document.getElementById('confirmationModal');
+            const confirmationMessage = document.getElementById('confirmationMessage');
+            const confirmYes = document.getElementById('confirmYes');
+            const confirmNo = document.getElementById('confirmNo');
+
+            confirmationMessage.textContent = message; // Set the message in the modal
+            confirmationModal.classList.remove('hidden'); // Make the modal visible
+
+            // Event handler for the "Sim" (Yes) button
+            const handleYes = () => {
+                callback(true); // Call the callback with true
+                confirmationModal.classList.add('hidden'); // Hide the modal
+                // Remove event listeners to prevent multiple calls
+                confirmYes.removeEventListener('click', handleYes);
+                confirmNo.removeEventListener('click', handleNo);
+            };
+
+            // Event handler for the "Não" (No) button
+            const handleNo = () => {
+                callback(false); // Call the callback with false
+                confirmationModal.classList.add('hidden'); // Hide the modal
+                // Remove event listeners to prevent multiple calls
+                confirmYes.removeEventListener('click', handleYes);
+                confirmNo.removeEventListener('click', handleNo);
+            };
+
+            // Attach event listeners to the confirmation buttons
+            confirmYes.addEventListener('click', handleYes);
+            confirmNo.addEventListener('click', handleNo);
+        }
+
+        /**
+         * Iterates through all region tabs and calls `loadRegionData` for each.
+         * This is typically used to refresh the entire UI after a global data change from Firestore.
+         */
+        function loadAllRegionData() {
+            document.querySelectorAll('.tab-content').forEach(content => {
+                const region = content.dataset.region;
+                loadRegionData(region); // Refresh data for each specific region's tab
+            });
+        }
+
+        /**
+         * Loads and displays candidate data for a specific region and vacancy type.
+         * Filters the `allCandidates` global array based on the provided region and type,
+         * then sorts them by score and renders them into the respective UI lists.
+         * @param {string} region - The region number (e.g., '1', '2') for which to display data.
+         */
+        function loadRegionData(region) {
+            // Filter the global `allCandidates` array to get only candidates for the current region
+            const candidatesForRegion = allCandidates.filter(c => c.region == region);
+
+            // Iterate over each predefined vacancy type (ampla, pcd, ppp)
+            ['ampla', 'pcd', 'ppp'].forEach(tipo => {
+                const lista = document.querySelector(`.lista-candidatos[data-region="${region}"][data-tipo="${tipo}"]`);
+                const counter = document.querySelector(`[data-count="${tipo}-${region}"]`);
+                
+                if (lista && counter) {
+                    // Further filter candidates by vacancy type and sort them by 'pontuacao' (score) in descending order
+                    const filteredCandidates = candidatesForRegion
+                                                .filter(c => c.tipo === tipo)
+                                                .sort((a, b) => b.pontuacao - a.pontuacao);
+
+                    lista.innerHTML = ''; // Clear any previously displayed candidate list items
+                    counter.textContent = filteredCandidates.length; // Update the counter for the current category and region
+
+                    if (filteredCandidates.length === 0) {
+                        // Display a message if no candidates are found for the current category
+                        lista.innerHTML = '<div class="p-4 text-gray-500 text-center">Nenhum candidato cadastrado</div>';
+                    } else {
+                        // Iterate through the filtered and sorted candidates to create and append their list items
+                        filteredCandidates.forEach((candidato, index) => {
+                            const item = document.createElement('div');
+                            item.className = 'flex justify-between items-center p-3 border-b border-gray-200 hover:bg-gray-50';
+                            item.innerHTML = `
+                                <div class="flex items-center space-x-3">
+                                    <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">${index + 1}º</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">${candidato.nome}</div>
+                                        <div class="text-sm text-gray-500">Cadastrado em: ${new Date(candidato.timestamp).toLocaleString('pt-BR')}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-lg font-bold text-gray-900">${candidato.pontuacao.toFixed(2)}</div>
+                                    <div class="text-xs text-gray-500">pontos</div>
+                                </div>
+                            `;
+                            lista.appendChild(item); // Add the created item to the list
+                        });
+                    }
+                }
+            });
+        }
+
+        /**
+         * Displays a temporary notification banner at the top-right of the screen.
+         * The notification disappears automatically after a few seconds.
+         * @param {string} message - The text message to be displayed in the notification.
+         * @param {string} type - The type of notification, which dictates its styling ('success', 'error', 'info').
+         */
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            // Apply Tailwind CSS classes based on the notification type for distinct visual feedback
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+                type === 'success' ? 'bg-green-500 text-white' : 
+                type === 'error' ? 'bg-red-500 text-white' : 
+                'bg-blue-500 text-white'
+            }`;
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'exclamation-triangle' : 'info'} mr-2"></i>
+                    ${message}
+                </div>
+            `;
+            document.body.appendChild(notification); // Add the notification to the DOM
+            
+            // Set a timeout to automatically remove the notification after 3 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Main entry point: Event listener for when the entire DOM content is loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Crucially, initialize Firebase and set up the data listener first.
+            // This ensures the backend connection is established before interacting with the UI elements
+            // that depend on database operations.
+            await initializeFirebase();
+            
+            // Event listeners for tab buttons: control which region's content is displayed
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const region = this.dataset.region;
+                    
+                    // Remove the 'active' class from all tab buttons and their corresponding content sections
+                    document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    // Add the 'active' class to the clicked tab button and its associated content section
+                    this.classList.add('active');
+                    document.querySelector(`.tab-content[data-region="${region}"]`).classList.add('active');
+                    
+                    // Load and display data for the newly active region.
+                    // The `onSnapshot` listener keeps `allCandidates` updated globally.
+                    // This specific call ensures that the correct region's data is immediately rendered
+                    // when the user switches tabs, even if the data itself hasn't changed in Firestore.
+                    loadRegionData(region);
+                });
+            });
+
+            // Event listeners for all candidate registration forms: handle form submissions
+            document.querySelectorAll('.candidate-form').forEach(form => {
+                form.addEventListener('submit', async function(e) {
+                    e.preventDefault(); // Prevent the browser's default form submission behavior
+                    
+                    const region = this.dataset.region; // Get the region from the form's data attribute
+                    const formData = new FormData(this); // Create a FormData object to easily extract form values
+                    
+                    // Construct the candidate object from the form data
+                    const candidato = {
+                        nome: formData.get('nome'),
+                        pontuacao: parseFloat(formData.get('pontuacao')), // Parse the score as a floating-point number
+                        tipo: formData.get('tipo')
+                    };
+                    
+                    // Add the new candidate to Firestore
+                    await addCandidateToFirestore(region, candidato);
+                    this.reset(); // Clear the form fields after successful submission
+                });
+            });
+
+            // Event listener for the "Administração" toggle button: controls visibility of the admin panel
+            document.getElementById('adminToggle').addEventListener('click', function() {
+                const panel = document.getElementById('adminPanel');
+                panel.classList.toggle('active'); // Toggle the 'active' class to show/hide the panel
+                // Update the button's icon and text based on the panel's current visibility state
+                this.innerHTML = panel.classList.contains('active') ? 
+                    '<i class="fas fa-times mr-2"></i>Fechar Admin' : 
+                    '<i class="fas fa-cog mr-2"></i>Administração';
+            });
+
+            // Event listener for the "Backup JSON" button: initiates data export as JSON
+            document.getElementById('backupBtn').addEventListener('click', function() {
+                const dataStr = exportJSONFromFirestore(); // Retrieve all candidate data as a JSON string
+                const dataBlob = new Blob([dataStr], {type:'application/json'}); // Create a Blob from the JSON string
+                const url = URL.createObjectURL(dataBlob); // Create a URL for the Blob
+                const link = document.createElement('a'); // Create a temporary anchor element
+                link.href = url;
+                link.download = `sesap_backup_${new Date().toISOString().split('T')[0]}.json`; // Set the download filename
+                link.click(); // Programmatically click the link to trigger download
+                showNotification('Backup criado com sucesso!', 'success');
+            });
+
+            // Event listener for the "Restaurar" button: triggers the hidden file input click
+            document.getElementById('restoreBtn').addEventListener('click', function() {
+                document.getElementById('restoreFile').click();
+            });
+
+            // Event listener for the hidden file input's `change` event: handles selected file for restoration
+            document.getElementById('restoreFile').addEventListener('change', async function(e) {
+                const file = e.target.files[0]; // Get the selected file
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        // Attempt to restore the data from the file's content to Firestore
+                        const success = await restoreDataToFirestore(e.target.result);
+                        if (success) {
+                            // If restoration is successful, the `onSnapshot` listener will automatically
+                            // update the UI, so no explicit `loadRegionData` call is needed here.
+                        }
+                    };
+                    reader.readAsText(file); // Read the content of the file as text
+                }
+            });
+
+            // Event listener for the "Exportar CSV" button: initiates data export as CSV
+            document.getElementById('exportCsvBtn').addEventListener('click', function() {
+                const csvData = exportCSVFromFirestore(); // Retrieve all candidate data as a CSV string
+                const csvBlob = new Blob([csvData], {type:'text/csv'}); // Create a Blob from the CSV string
+                const url = URL.createObjectURL(csvBlob); // Create a URL for the Blob
+                const link = document.createElement('a'); // Create a temporary anchor element
+                link.href = url;
+                link.download = `sesap_candidatos_${new Date().toISOString().split('T')[0]}.csv`; // Set the download filename
+                link.click(); // Programmatically click the link to trigger download
+                showNotification('Relatório CSV exportado com sucesso!', 'success');
+            });
+
+            // Event listener for the "Limpar Tudo" button: handles complete data deletion with confirmations
+            document.getElementById('clearAllBtn').addEventListener('click', function() {
+                // First confirmation prompt using the custom modal
+                showConfirmationModal('ATENÇÃO: Esta ação irá apagar TODOS os dados de TODAS as regiões PERMANENTEMENTE. Deseja continuar?', async (result1) => {
+                    if (result1) { // If the user confirms the first prompt
+                        // Second, more emphatic confirmation prompt
+                        showConfirmationModal('Tem certeza absoluta? Todos os candidatos cadastrados serão perdidos permanentemente.', async (result2) => {
+                            if (result2) { // If the user confirms the second prompt
+                                await deleteAllCandidatesFromFirestore(); // Proceed to delete all data from Firestore
+                            }
+                        });
+                    }
+                });
+            });
+
+            // Initial display setup: Simulate a click on the first tab button to ensure
+            // the initial region's data is loaded and displayed when the page loads.
+            // The `onSnapshot` listener will ensure data is available from Firestore.
+            document.querySelector('.tab-button[data-region="1"]').click();
+        });
+    </script>
+</body>
+</html>
